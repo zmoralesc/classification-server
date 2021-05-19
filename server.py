@@ -23,6 +23,7 @@ main_cfg = configparser.ConfigParser()
 with open('server.cfg') as cfg_file:
     main_cfg.read_file(cfg_file)
 
+SERVER_PORT = main_cfg['server'].getint('port')
 MODEL_PATH = main_cfg['inference'].get('model')
 BATCH_SIZE = main_cfg['input'].getint('batch')
 INPUT_DIMS = (
@@ -306,7 +307,7 @@ async def main():
                 status_code=500, detail='Unable to serve request')
 
     # attach app to uvicorn server
-    server_cfg = uvicorn.Config(app, loop=asyncio.get_event_loop())
+    server_cfg = uvicorn.Config(app, loop=asyncio.get_event_loop(), port=SERVER_PORT)
     server = Server(config=server_cfg)
 
     # load model
