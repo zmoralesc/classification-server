@@ -256,7 +256,7 @@ async def main():
 
     @app.post('/cfg')
     async def __():
-        return {'input_dims': 'x'.join(INPUT_DIMS)}
+        return {'input_dims': 'x'.join(*[map(str, INPUT_DIMS)])}
 
     @app.post('/classify')
     async def __(
@@ -307,7 +307,7 @@ async def main():
                 status_code=500, detail='Unable to serve request')
 
     # attach app to uvicorn server
-    server_cfg = uvicorn.Config(app, loop=asyncio.get_event_loop(), port=SERVER_PORT)
+    server_cfg = uvicorn.Config(app, loop=asyncio.get_event_loop(), port=SERVER_PORT, host='0.0.0.0')
     server = Server(config=server_cfg)
 
     # load model
