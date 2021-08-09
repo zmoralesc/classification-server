@@ -1,0 +1,17 @@
+[inference]
+model = 
+labels = 
+preprocess = 
+
+[input]
+height = 
+width = 
+channels = 
+batch = 
+
+[scheduler]
+flush_interval = 
+queue_size = 
+
+[server]
+port = 
