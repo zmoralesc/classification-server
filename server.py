@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from collections import defaultdict, namedtuple
+import csv
 import sys
 import uuid
 import zlib
@@ -31,6 +33,73 @@ INPUT_DIMS = (
     main_cfg['input'].getint('width'),
     main_cfg['input'].getint('channels')
 )
+
+CLASSES_CSV = main_cfg['inference'].get('classes_file')
+THRESHOLDS_CSV = main_cfg['inference'].get('thresholds_file')
+MINIMUM_THRESHOLD = main_cfg['inference'].getfloat('minimum_threshold')
+
+ThresholdData = namedtuple('ThresholdData', [
+    'top1_minval', 'top1_maxval', 'top2_minval', 'top2_maxval', 'correct_percentage'])
+thresholds_dict = {}
+
+
+def load_thresholds(filepath: str):
+    thresholds = defaultdict(dict)
+    with open(filepath, 'rt') as f:
+        f.__next__()  # skip first line
+        for classname, top1_minval, top1_maxval, top2_minval, top2_maxval, correct_percentage in csv.reader(f):
+            name_1, name_2, organ = classname.split()
+            name = name_1 + ' ' + name_2
+
+            try:
+                top1_minval = float(top1_minval)
+            except:
+                top1_minval = -1
+            try:
+                top1_maxval = float(top1_maxval)
+            except:
+                top1_maxval = -1
+            try:
+                top2_minval = float(top2_minval)
+            except:
+                top2_minval = -1
+            try:
+                top2_maxval = float(top2_maxval)
+            except:
+                top2_maxval = -1
+            try:
+                correct_percentage = float(correct_percentage)
+            except:
+                correct_percentage = -1
+
+            thresholds[name][organ] = ThresholdData(
+                top1_minval=top1_minval,
+                top1_maxval=top1_maxval,
+                top2_minval=top2_minval,
+                top2_maxval=top2_maxval,
+                correct_percentage=correct_percentage)
+    return thresholds
+
+
+thresholds_dict = load_thresholds(THRESHOLDS_CSV)
+
+
+def validate_prediction(score: float, thres: ThresholdData) -> bool:
+    a1 = thres.top1_minval
+    b2 = thres.top2_maxval
+    p = thres.correct_percentage
+    #score += .01
+    d = a1 - b2
+    t = a1 - (1 - p) * (d / 2)
+    print(f'score = {score}, t = {t}')
+    return score > t and score > MINIMUM_THRESHOLD
+
+
+def get_top_answer(answer: np.array, class_list):
+    '''Get single top answer'''
+    i, val = sorted([[i, val] for i, val in enumerate(
+        answer)], key=lambda x: x[1], reverse=True)[0]
+    return class_list[i], float(val)
 
 
 def get_top_k(answer: np.array, class_list: list, K: int = 5):
@@ -201,11 +270,10 @@ class InferenceScheduler:
             await asyncio.sleep(self.__flush_time)
             # fire queue flush event
             self.__flush_event.set()
-            await self.__model_free.wait()
             # make sure model is free by waiting for free event
+            await self.__model_free.wait()
 
     async def do_inference(self, request: InferenceRequest):
-        # wait until model is free
         await self.__model_free.wait()
 
         self.__serving_requests[request.id] = request
@@ -216,12 +284,47 @@ class InferenceScheduler:
         await request.complete.wait()
         del self.__serving_requests[request.id]
 
-        # order results by index
-        top_ks = []
-        for r in sorted(request.inference_targets, key=lambda x: x.index):
-            tk = get_top_k(r.result, self.__classes, request.top_n)
-            top_ks.append({classname: value for classname, value in tk})
-        return top_ks
+        if request.top_n > 5:
+            top_ks = []
+            for r in sorted(request.inference_targets, key=lambda x: x.index):
+                tk = get_top_k(r.result, self.__classes, request.top_n)
+                top_ks.append({classname: value for classname, value in tk})
+            return top_ks
+        else:
+            answers = []
+            for r in sorted(request.inference_targets, key=lambda x: x.index):
+                classname, value = get_top_answer(r.result, self.__classes)
+                word_one, word_two, organ = classname.split()
+                species = word_one + ' ' + word_two
+                t: ThresholdData = thresholds_dict[species][organ]
+
+                if validate_prediction(value, t):
+                    answers.append((classname, value))
+            if not answers:
+                return [('Especie desconocida', None)]
+            elif len(answers) == 1:
+                classname, score = answers[0]
+                word_one, word_two, _ = classname.split()
+                species = word_one + ' ' + word_two
+                return [(species, score)]
+            else:
+                scores_by_species = defaultdict(int)
+                answer_count_by_species = defaultdict(int)
+                for classname, score in answers:
+                    classname: str
+                    word_one, word_two, _ = classname.split()
+                    species = word_one + ' ' + word_two
+                    scores_by_species[species] += score
+                    answer_count_by_species[species] += 1
+                # sort by highest score sum
+                answers = sorted([species, score]
+                                 for species, score in scores_by_species.items())
+                # set top answer score to the mean of all scores
+                answers[0][1] /= answer_count_by_species[answers[0][0]]
+                # set remaining answers to zero
+                for r in answers[1:]:
+                    r[1] = 0.0
+                return answers
 
 
 def blob_to_arrays(blob: bytes, meta_buff_size: int = 16) -> list:
@@ -254,6 +357,11 @@ async def main():
     # define app
     app = FastAPI()
 
+    @app.get('/classes')
+    async def __():
+        with open(CLASSES_CSV, 'rt') as f:
+            return f.read()
+
     @app.post('/cfg')
     async def __():
         return {'input_dims': 'x'.join(*[map(str, INPUT_DIMS)])}
@@ -262,7 +370,7 @@ async def main():
     async def __(
         multi: Optional[bool] = Form(False),
         regions: Optional[str] = Form(None),
-        top_n: Optional[int] = Form(5),
+        top_n: Optional[int] = Form(1),
         blob: UploadFile = File(...),
     ):
         try:
@@ -300,14 +408,14 @@ async def main():
         try:
             # serve request
             new_request = InferenceRequest(arrays, top_n=top_n)
-
             return await scheduler.do_inference(new_request)
         except Exception:
             raise HTTPException(
                 status_code=500, detail='Unable to serve request')
 
     # attach app to uvicorn server
-    server_cfg = uvicorn.Config(app, loop=asyncio.get_event_loop(), port=SERVER_PORT, host='0.0.0.0')
+    server_cfg = uvicorn.Config(
+        app, loop=asyncio.get_event_loop(), port=SERVER_PORT, host='0.0.0.0')
     server = Server(config=server_cfg)
 
     # load model
@@ -318,7 +426,7 @@ async def main():
         tf.keras.applications, main_cfg['inference'].get('preprocess')).preprocess_input
 
     # load classes
-    with open(main_cfg['inference'].get('labels'), 'rt') as classes_file:
+    with open(main_cfg['inference'].get('classes_file'), 'rt') as classes_file:
         classes = [x.strip() for x in classes_file]
 
     # set scheduler parameters

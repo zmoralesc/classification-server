@@ -1,17 +1,19 @@
 [inference]
-model = 
-labels = 
-preprocess = 
+model =
+classes_file =
+thresholds_file =
+minimum_threshold =
+preprocess =
 
 [input]
-height = 
-width = 
-channels = 
-batch = 
+height =
+width =
+channels =
+batch =
 
 [scheduler]
-flush_interval = 
-queue_size = 
+flush_interval =
+queue_size =
 
 [server]
-port = 
+port =
