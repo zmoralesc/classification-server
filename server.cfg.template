@@ -2,8 +2,8 @@
 model =
 classes_file =
 thresholds_file =
-minimum_threshold =
 preprocess =
+minimum_threshold =
 
 [input]
 height =

@@ -88,10 +88,8 @@ def validate_prediction(score: float, thres: ThresholdData) -> bool:
     a1 = thres.top1_minval
     b2 = thres.top2_maxval
     p = thres.correct_percentage
-    #score += .01
     d = a1 - b2
     t = a1 - (1 - p) * (d / 2)
-    print(f'score = {score}, t = {t}')
     return score > t and score > MINIMUM_THRESHOLD
 
 
