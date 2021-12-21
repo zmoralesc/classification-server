@@ -9,7 +9,6 @@ import struct
 import asyncio
 import configparser
 
-from traceback import print_exc
 from typing import Callable, Optional
 from concurrent.futures import ThreadPoolExecutor
 
@@ -20,6 +19,7 @@ import numpy as np
 import tensorflow as tf
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 main_cfg = configparser.ConfigParser()
 with open('server.cfg') as cfg_file:
@@ -282,7 +282,7 @@ class InferenceScheduler:
         await request.complete.wait()
         del self.__serving_requests[request.id]
 
-        if request.top_n > 5:
+        if request.top_n > 1:
             top_ks = []
             for r in sorted(request.inference_targets, key=lambda x: x.index):
                 tk = get_top_k(r.result, self.__classes, request.top_n)
@@ -360,6 +360,10 @@ async def main():
         with open(CLASSES_CSV, 'rt') as f:
             return f.read()
 
+    # Added by Ines to allow CORS. Nov 18, 2021
+    origins = ["*"]
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
     @app.post('/cfg')
     async def __():
         return {'input_dims': 'x'.join(*[map(str, INPUT_DIMS)])}
@@ -368,7 +372,7 @@ async def main():
     async def __(
         multi: Optional[bool] = Form(False),
         regions: Optional[str] = Form(None),
-        top_n: Optional[int] = Form(1),
+        top_n: Optional[int] = Form(5),
         blob: UploadFile = File(...),
     ):
         try:
