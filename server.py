@@ -403,7 +403,6 @@ async def main():
                 arrays = [cv2.resize(x, INPUT_DIMS[:2]) if x.shape !=
                           INPUT_DIMS else x for x in blob_to_arrays(blob)]
         except Exception:
-            print_exc()
             raise HTTPException(
                 status_code=500, detail='Malformed request')
 
