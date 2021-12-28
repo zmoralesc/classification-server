@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from collections import defaultdict, namedtuple
+import os
 import csv
 import sys
 import uuid
@@ -7,8 +7,8 @@ import zlib
 import signal
 import struct
 import asyncio
-import configparser
 
+from collections import defaultdict, namedtuple
 from typing import Callable, Optional
 from concurrent.futures import ThreadPoolExecutor
 
@@ -21,22 +21,19 @@ import tensorflow as tf
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-main_cfg = configparser.ConfigParser()
-with open('server.cfg') as cfg_file:
-    main_cfg.read_file(cfg_file)
 
-SERVER_PORT = main_cfg['server'].getint('port')
-MODEL_PATH = main_cfg['inference'].get('model')
-BATCH_SIZE = main_cfg['input'].getint('batch')
+SERVER_PORT = int(os.environ['SERVER_PORT'])
+MODEL_PATH = os.environ['INFERENCE_MODEL']
+BATCH_SIZE = int(os.environ['INPUT_BATCH'])
 INPUT_DIMS = (
-    main_cfg['input'].getint('height'),
-    main_cfg['input'].getint('width'),
-    main_cfg['input'].getint('channels')
+    int(os.environ['INPUT_HEIGHT']),
+    int(os.environ['INPUT_WIDTH']),
+    int(os.environ['INPUT_CHANNELS'])
 )
 
-CLASSES_CSV = main_cfg['inference'].get('classes_file')
-THRESHOLDS_CSV = main_cfg['inference'].get('thresholds_file')
-MINIMUM_THRESHOLD = main_cfg['inference'].getfloat('minimum_threshold')
+CLASSES_CSV = os.environ['INFERENCE_CLASSES_FILE']
+THRESHOLDS_CSV = os.environ['INFERENCE_THRESHOLDS_FILE']
+MINIMUM_THRESHOLD = float(os.environ['INFERENCE_MINIMUM_THRESHOLD'])
 
 ThresholdData = namedtuple('ThresholdData', [
     'top1_minval', 'top1_maxval', 'top2_minval', 'top2_maxval', 'correct_percentage'])
@@ -147,7 +144,7 @@ class InferenceTarget:
 class InferenceRequest:
     __request_ids: set = set()
 
-    def __init__(self, arrays: list, top_n: int = 5, raw: bool = False):
+    def __init__(self, arrays: list, top_n: int = 5, consolidate: bool = False):
         while True:
             req_id = uuid.uuid4()
             if req_id not in self.__request_ids:
@@ -160,7 +157,7 @@ class InferenceRequest:
         self.__is_completed: asyncio.Event = asyncio.Event()
 
         self.top_n = top_n
-        self.raw = raw
+        self.consolidate = consolidate
 
         for i, array in enumerate(arrays):
             self.__inference_targets.append(InferenceTarget(
@@ -282,7 +279,7 @@ class InferenceScheduler:
         await request.complete.wait()
         del self.__serving_requests[request.id]
 
-        if request.top_n > 1:
+        if not request.consolidate:
             top_ks = []
             for r in sorted(request.inference_targets, key=lambda x: x.index):
                 tk = get_top_k(r.result, self.__classes, request.top_n)
@@ -350,7 +347,7 @@ def blob_to_arrays(blob: bytes, meta_buff_size: int = 16) -> list:
 async def main():
     # instantiate scheduler
     scheduler = InferenceScheduler(
-        queue_flush_interval=main_cfg['scheduler'].getfloat('flush_interval'))
+        queue_flush_interval=float(os.environ['SCHEDULER_FLUSH_INTERVAL']))
 
     # define app
     app = FastAPI()
@@ -362,7 +359,8 @@ async def main():
 
     # Added by Ines to allow CORS. Nov 18, 2021
     origins = ["*"]
-    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=origins,
+                       allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
     @app.post('/cfg')
     async def __():
@@ -373,6 +371,7 @@ async def main():
         multi: Optional[bool] = Form(False),
         regions: Optional[str] = Form(None),
         top_n: Optional[int] = Form(5),
+        consolidate: Optional[bool] = Form(False),
         blob: UploadFile = File(...),
     ):
         try:
@@ -408,7 +407,8 @@ async def main():
 
         try:
             # serve request
-            new_request = InferenceRequest(arrays, top_n=top_n)
+            new_request = InferenceRequest(
+                arrays, top_n=top_n, consolidate=consolidate)
             return await scheduler.do_inference(new_request)
         except Exception:
             raise HTTPException(
@@ -424,10 +424,10 @@ async def main():
 
     # select input preprocessing function
     preprocesssing_function = getattr(
-        tf.keras.applications, main_cfg['inference'].get('preprocess')).preprocess_input
+        tf.keras.applications, os.environ['INFERENCE_PREPROCESS']).preprocess_input
 
     # load classes
-    with open(main_cfg['inference'].get('classes_file'), 'rt') as classes_file:
+    with open(os.environ['INFERENCE_CLASSES_FILE'], 'rt') as classes_file:
         classes = [x.strip() for x in classes_file]
 
     # set scheduler parameters
