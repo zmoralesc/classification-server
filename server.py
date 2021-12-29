@@ -20,6 +20,7 @@ import tensorflow as tf
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 
 SERVER_PORT = int(os.environ['SERVER_PORT'])
@@ -355,7 +356,7 @@ async def main():
     @app.get('/classes')
     async def __():
         with open(CLASSES_CSV, 'rt') as f:
-            return f.read()
+            return JSONResponse(content=[l.strip() for l in f.readlines()])
 
     # Added by Ines to allow CORS. Nov 18, 2021
     origins = ["*"]
