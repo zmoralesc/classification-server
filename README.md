@@ -90,7 +90,7 @@ Las solicitudes deben realizarse con el método POST. El contenido de esta solic
 Es posible definir múltiples regiones separadas con comas, por ejemplo: ```140,59,238;140,59,238;140,59,238```
 
 - top_n: cuando el modelo recibe una imagen, asigna una probabilidad a cada una de las clases con las que fue entrenado, para después regresarlas ordenadas de la más probable a la menos probable. Este parámetro define el número máximo de respuestas a regresar, con 5 como valor por defecto.
-- consolidate: Indica si se deben combinar las respuestas del modelo (para modelos que clasifican órganos). El valor por defecto es ```falso```.
+- consolidate: Valor 1 o 0 que indica si se deben combinar las respuestas del modelo (para modelos que clasifican órganos). El valor por defecto es 0.
 - (obligatorio) blob: imagen JPG que se desea clasificar.
 
 Ejemplos:
