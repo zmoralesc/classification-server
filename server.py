@@ -369,39 +369,31 @@ async def main():
 
     @app.post('/classify')
     async def __(
-        multi: Optional[bool] = Form(False),
         regions: Optional[str] = Form(None),
         top_n: Optional[int] = Form(5),
         consolidate: Optional[bool] = Form(False),
         blob: UploadFile = File(...),
     ):
         try:
-            if not multi:
-                # interpret blob as single image
-                blob = await blob.read()
-                nparr = np.frombuffer(blob, np.uint8)
-                img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            # interpret blob as single image
+            blob = await blob.read()
+            nparr = np.frombuffer(blob, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-                if regions:
-                    # extract regions from image
-                    regions = [[*map(int, r.split(','))]
-                               for r in regions.split(';')]
-                    # extract crops
-                    crops = [img[y:y+l, x:x+l, :] for y, x, l in regions]
+            if regions:
+                # extract regions from image
+                regions = [[*map(int, r.split(','))]
+                           for r in regions.split(';')]
+                # extract crops
+                crops = [img[y:y+l, x:x+l, :] for y, x, l in regions]
 
-                    # resize crops
-                    arrays = [cv2.resize(x, INPUT_DIMS[:2]) if x.shape !=
-                              INPUT_DIMS else x for x in crops]
-                else:
-                    # use single image
-                    arrays = [cv2.resize(img, INPUT_DIMS[:2]) if img.shape !=
-                              INPUT_DIMS else img]
-            else:
-                # interpret blob as a bunch of crops
-                blob = await blob.read()
-                blob = zlib.decompress(blob)
+                # resize crops
                 arrays = [cv2.resize(x, INPUT_DIMS[:2]) if x.shape !=
-                          INPUT_DIMS else x for x in blob_to_arrays(blob)]
+                          INPUT_DIMS else x for x in crops]
+            else:
+                # use single image
+                arrays = [cv2.resize(img, INPUT_DIMS[:2])
+                          if img.shape != INPUT_DIMS else img]
         except Exception:
             raise HTTPException(
                 status_code=500, detail='Malformed request')

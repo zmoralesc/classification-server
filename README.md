@@ -1,6 +1,6 @@
-# Servidor de clasificación #
+# Servidor de clasificación de plantas #
 
-Servidor asíncrono de clasificación escrito en Python puro. Atiende solicitudes concurrentes utilizando un solo modelo con formato H5.
+Servidor asíncrono de clasificación de plantas escrito en Python puro. Atiende solicitudes concurrentes utilizando un solo modelo con formato H5.
 
 ## Requisitos ##
 
@@ -19,7 +19,11 @@ Servidor asíncrono de clasificación escrito en Python puro. Atiende solicitude
     ```
 4. Construir imagen de contenedor:
     ```bash
-    sudo docker build --tag classification-server .
+    sudo docker build --tag classification-server:latest .
+    ```
+    Opcionalmente, para construir una imagen con soporte para GPUs:
+    ```bash
+    sudo docker build --build-arg "TAG=latest-gpu" --tag classification-server:latest-gpu .
     ```
 
 ## Servidor ##
@@ -60,5 +64,53 @@ sudo docker run -d --rm -p 8002:8001 -e INPUT_BATCH=64 -e SCHEDULER_QUEUE_SIZE=6
 
 A continuación se describen las variables utilizadas por la aplicación:
 
+| Variable                    | Descripción                                                                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| INFERENCE_MINIMUM_THRESHOLD | El valor mínimo de confianza para las respuestas del modelo. Una respuesta con confianza menor a este valor producirá "Especie desconocida" como respuesta. |
+| INFERENCE_PREPROCESS        | Función de preprocesamiento a utilizar. Este nombre debe existir en el espacio ```tf.keras.applications``` de tensorflow.                                   |
+| INPUT_HEIGHT                | Alto del tensor de entrada del modelo.                                                                                                                      |
+| INPUT_WIDTH                 | Ancho del tensor de entrada del modelo.                                                                                                                     |
+| INPUT_CHANNELS              | Canales del tensor de entrada del modelo.                                                                                                                   |
+| INPUT_BATCH                 | Tamaño de lote del modelo.                                                                                                                                  |
+| SCHEDULER_FLUSH_INTERVAL    | Segundos a esperar antes de vaciar la cola de espera.                                                                                                       |
+| SCHEDULER_QUEUE_SIZE        | Tamaño de la cola de espera. Cuando se alcanza este límite, las solicitudes se rechazan hasta que el tamaño de la cola se reduzca.                          |
+
+Adicionalmente, existen algunas variables que no se recomienda modificar. Estas variables corresponden en su mayoría a rutas de archivos, pero dado que la aplicación se ejecuta dentro de un contenedor, es mejor dejarlas como están y simplemente montar los archivos en las rutas previamente descritas desde el host. Estas variables son:
+
+- INFERENCE_MODEL: Ruta al modelo.
+- INFERENCE_CLASSES_FILE: Ruta al archivo de clases.
+- INFERENCE_THRESHOLDS_FILE: Ruta al archivo de umbrales.
+- SERVER_PORT: Puerto donde se expone la aplicación. Modificar esta variable puede resultar útil, por ejemplo para cambiar el puerto cuando se utiliza el stack de red del host con la opción ```--net=host``` de Docker.
+
 ## Hacer solicitudes ##
 
+Las solicitudes deben realizarse con el método POST. El contenido de esta solicitud es un formulario con los siguientes campos:
+
+- (opcional) regions: string que representa una lista de regiones a utilizar de la imagen. Este string se compone de segmentos con las coordenadas X, Y, y el alto/ancho de la región a utilizar, separados con punto y coma (```;```). Por ejemplo, para definir una región cuadrada que inicia en la región [34, 47] y tiene un alto y ancho de 200, el segmento se representa de esta forma: ```34;47;200```
+Es posible definir múltiples regiones separadas con comas, por ejemplo: ```140,59,238;140,59,238;140,59,238```
+
+- top_n: cuando el modelo recibe una imagen, asigna una probabilidad a cada una de las clases con las que fue entrenado, para después regresarlas ordenadas de la más probable a la menos probable. Este parámetro define el número máximo de respuestas a regresar, con 5 como valor por defecto.
+- consolidate: Indica si se deben combinar las respuestas del modelo (para modelos que clasifican órganos). El valor por defecto es ```falso```.
+- (obligatorio) blob: imagen JPG que se desea clasificar.
+
+Ejemplos:
+
+##### Clasificación de tres regiones, con consolidado de respuestas #####
+```bash
+curl --form-string regions="140,59,238;140,59,238;140,59,238" -F blob=@whole.jpg -F consolidate=1 localhost:8002/classify
+```
+
+##### Clasificación de imagen completa, Top 7 respuestas más probables #####
+```bash
+curl -F blob=@whole.jpg -F top_n=7 localhost:8002/classify
+```
+
+##### Obtener listado de clases con las que el modelo fue entrenado #####
+```bash
+curl localhost:8002/classes
+```
+
+##### Obtener dimensiones de entrada del modelo #####
+```bash
+curl localhost:8002/cfg
+```

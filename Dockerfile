@@ -4,7 +4,8 @@ ADD . /src
 WORKDIR /src
 RUN python3 -m pip install --user -r requirements.txt
 
-FROM tensorflow/tensorflow:latest
+ARG TAG=latest
+FROM tensorflow/tensorflow:${TAG}
 
 COPY --from=0 /root/.local /root/.local
 COPY --from=0 /src /workspace
