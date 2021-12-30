@@ -48,7 +48,7 @@ Ejemplo: si nuestro modelo está en la ruta ```/home/inegi/inception.h5```, nues
 sudo docker run -d --rm -p 8002:8001 -v /home/inegi/inception.h5:/model.h5 -v /home/inegi/clases.txt:/classes.txt -v /home/inegi/umbrales.csv:/thresholds.csv classification-server
 ```
 
-### Configuración de servidor
+### Configuración de servidor ###
 
 La aplicación utiliza variables de entorno para su configuración. Varias de estas variables llevan valores por defecto, los cuales se pueden sustituir para alterar el comportamiento del servicio. La forma de hacer esto es pasar variables de entorno cuando se ejecuta el contenedor, usando la opción ```-e``` (```--env```). Por ejemplo, la aplicación utiliza la variable ```INPUT_BATCH``` para definir su tamaño de lote, el cual es por defecto 32. Si quisieramos modificar este valor a 64, basta con pasar la opción ```-e INPUT_BATCH=64``` al iniciar el contenedor:
 
