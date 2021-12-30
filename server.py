@@ -32,7 +32,7 @@ INPUT_DIMS = (
     int(os.environ['INPUT_CHANNELS'])
 )
 
-CLASSES_CSV = os.environ['INFERENCE_CLASSES_FILE']
+CLASSES_FILE = os.environ['INFERENCE_CLASSES_FILE']
 THRESHOLDS_CSV = os.environ['INFERENCE_THRESHOLDS_FILE']
 MINIMUM_THRESHOLD = float(os.environ['INFERENCE_MINIMUM_THRESHOLD'])
 
@@ -355,7 +355,7 @@ async def main():
 
     @app.get('/classes')
     async def __():
-        with open(CLASSES_CSV, 'rt') as f:
+        with open(CLASSES_FILE, 'rt') as f:
             return JSONResponse(content=[l.strip() for l in f.readlines()])
 
     # Added by Ines to allow CORS. Nov 18, 2021
